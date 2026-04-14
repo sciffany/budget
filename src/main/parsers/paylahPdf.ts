@@ -9,12 +9,7 @@ export class PayLahPdfParser implements BankParser {
   readonly formats: ("pdf" | "csv")[] = ["pdf"];
 
   detect(filename: string, extractedText: string): number {
-    const fileScore = /paylah/i.test(filename) ? 0.6 : 0;
-    const textScore =
-      /PayLah/i.test(extractedText) || /DBS PayLah/i.test(extractedText)
-        ? 0.5
-        : 0;
-    return Math.min(fileScore + textScore, 1);
+    return extractedText.includes("PayLah!") ? 1 : 0;
   }
 
   async parse(filepath: string): Promise<ParseResult> {

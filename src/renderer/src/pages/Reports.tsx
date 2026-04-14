@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { ReportRow } from '@shared/types'
 import { formatAmount, cn } from '../lib/utils'
-import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns'
 
 export default function Reports(): JSX.Element {
   const [rows, setRows] = useState<ReportRow[]>([])
-  const [dateFrom, setDateFrom] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
-  const [dateTo, setDateTo] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
+  const [month, setMonth] = useState(startOfMonth(new Date()))
   const [loading, setLoading] = useState(false)
+
+  const dateFrom = format(month, 'yyyy-MM-dd')
+  const dateTo = format(endOfMonth(month), 'yyyy-MM-dd')
 
   async function load(): Promise<void> {
     setLoading(true)
@@ -16,7 +18,7 @@ export default function Reports(): JSX.Element {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [dateFrom, dateTo])
+  useEffect(() => { load() }, [month])
 
   // Group by heading
   const byHeading = rows.reduce<Record<number, { headingName: string; rows: ReportRow[] }>>(
@@ -37,20 +39,24 @@ export default function Reports(): JSX.Element {
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <h1 className="text-lg font-semibold">Reports</h1>
-        <div className="flex items-center gap-3 text-sm">
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="bg-accent border border-border rounded px-2 py-1 text-sm"
-          />
-          <span className="text-muted-foreground">to</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="bg-accent border border-border rounded px-2 py-1 text-sm"
-          />
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setMonth((m) => subMonths(m, 1))}
+            className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Previous month"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <span className="text-sm font-medium w-32 text-center tabular-nums">
+            {format(month, 'MMMM yyyy')}
+          </span>
+          <button
+            onClick={() => setMonth((m) => addMonths(m, 1))}
+            className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Next month"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
         </div>
       </div>
 

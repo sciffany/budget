@@ -24,6 +24,7 @@ export const IPC = {
   TRANSACTIONS_CREATE: 'transactions:create',
   TRANSACTIONS_UPDATE_CATEGORY: 'transactions:updateCategory',
   TRANSACTIONS_UPDATE_DATE: 'transactions:updateDate',
+  TRANSACTIONS_UPDATE_ACCOUNT: 'transactions:updateAccount',
   TRANSACTIONS_DELETE: 'transactions:delete',
 
   // Rules

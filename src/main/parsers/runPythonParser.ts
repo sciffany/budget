@@ -43,6 +43,7 @@ export function runPythonParser(
         const { data, errors } = parseCsv<PythonCsvRow>(content, {
           header: true,
           skipEmptyLines: true,
+          delimiter: ",",
         });
         if (errors.length) {
           return reject(new Error(`CSV parse error: ${errors[0].message}`));

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Transaction, TransactionFilter } from "@shared/types";
+import type { Account, Category, Heading, Transaction, TransactionFilter } from "@shared/types";
 import { formatAmount, formatDate } from "../lib/utils";
 import { cn } from "../lib/utils";
 
@@ -25,18 +25,25 @@ interface Props {
 interface ContextMenu {
   x: number;
   y: number;
+  txId: number;
   payee: string;
 }
 
 export default function Transactions({ onCreateRule }: Props): JSX.Element {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [headings, setHeadings] = useState<Heading[]>([]);
   const [filter, setFilter] = useState<TransactionFilter>({});
   const [searchInput, setSearchInput] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("");
   const [loading, setLoading] = useState(true);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [editingDateId, setEditingDateId] = useState<number | null>(null);
+  const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
+  const accountSelectRef = useRef<HTMLSelectElement>(null);
 
   const debouncedSearch = useDebounce(searchInput, 250);
 
@@ -46,9 +53,30 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
 
   async function load(): Promise<void> {
     setLoading(true);
-    const data = await window.api.listTransactions(filter);
+    const [data, accs, cats, hdgs] = await Promise.all([
+      window.api.listTransactions(filter),
+      window.api.listAccounts(),
+      window.api.listCategories(),
+      window.api.listHeadings(),
+    ]);
     setTransactions(data);
+    setAccounts(accs);
+    setCategories(cats);
+    setHeadings(hdgs);
     setLoading(false);
+  }
+
+  function handleMonthChange(value: string): void {
+    setSelectedMonth(value);
+    if (!value) {
+      setFilter((f) => ({ ...f, dateFrom: undefined, dateTo: undefined }));
+      return;
+    }
+    const [year, month] = value.split("-").map(Number);
+    const dateFrom = `${year}-${String(month).padStart(2, "0")}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const dateTo = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    setFilter((f) => ({ ...f, dateFrom, dateTo }));
   }
 
   useEffect(() => {
@@ -63,9 +91,15 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
     return () => window.removeEventListener("click", handleClick);
   }, []);
 
-  function handleContextMenu(e: React.MouseEvent, payee: string): void {
+  function handleContextMenu(e: React.MouseEvent, txId: number, payee: string): void {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, payee });
+    setContextMenu({ x: e.clientX, y: e.clientY, txId, payee });
+  }
+
+  async function handleDelete(id: number): Promise<void> {
+    await window.api.deleteTransaction(id);
+    setContextMenu(null);
+    await load();
   }
 
   async function handleDateChange(id: number, newDate: string): Promise<void> {
@@ -86,12 +120,23 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
     }
   }
 
+  async function handleAccountChange(
+    id: number,
+    newAccountId: number
+  ): Promise<void> {
+    setEditingAccountId(null);
+    await window.api.updateTransactionAccount(id, newAccountId);
+    await load();
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-4 px-6 py-4 border-b border-border">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-border flex-wrap">
         <h1 className="text-lg font-semibold shrink-0">Transactions</h1>
-        <div className="relative flex-1 max-w-xs">
+
+        {/* Search */}
+        <div className="relative flex-1 min-w-[160px] max-w-xs">
           <svg
             className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none"
             xmlns="http://www.w3.org/2000/svg"
@@ -113,6 +158,43 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
             className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md bg-accent/50 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
+
+        {/* Month filter */}
+        <input
+          type="month"
+          value={selectedMonth}
+          onChange={(e) => handleMonthChange(e.target.value)}
+          className="py-1.5 px-2.5 text-sm rounded-md bg-accent/50 border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring [color-scheme:dark]"
+        />
+
+        {/* Category filter */}
+        <select
+          value={filter.categoryId ?? ""}
+          onChange={(e) =>
+            setFilter((f) => ({
+              ...f,
+              categoryId: e.target.value ? Number(e.target.value) : undefined,
+            }))
+          }
+          className="py-1.5 px-2.5 text-sm rounded-md bg-accent/50 border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring max-w-[180px]"
+        >
+          <option value="">All categories</option>
+          {headings.map((h) => {
+            const cats = categories.filter((c) => c.heading_id === h.id);
+            if (cats.length === 0) return null;
+            return (
+              <optgroup key={h.id} label={h.name}>
+                {cats.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </optgroup>
+            );
+          })}
+        </select>
+
+        {/* Uncategorised toggle */}
         <label className="flex items-center gap-2 text-sm text-muted-foreground ml-auto shrink-0">
           <input
             type="checkbox"
@@ -145,6 +227,13 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
           >
             Create rule for payee…
           </button>
+          <div className="my-1 border-t border-border" />
+          <button
+            className="w-full text-left px-3 py-1.5 hover:bg-destructive/20 text-destructive transition-colors"
+            onClick={() => handleDelete(contextMenu.txId)}
+          >
+            Delete transaction
+          </button>
         </div>
       )}
 
@@ -156,10 +245,12 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
           </div>
         ) : transactions.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
-            <span className="text-4xl">{searchInput ? "🔍" : "↑"}</span>
+            <span className="text-4xl">
+              {searchInput || filter.categoryId || selectedMonth ? "🔍" : "↑"}
+            </span>
             <p className="text-sm">
-              {searchInput
-                ? `No transactions matching "${searchInput}"`
+              {searchInput || filter.categoryId || selectedMonth
+                ? "No transactions match the current filters"
                 : "No transactions yet — import a statement to get started"}
             </p>
           </div>
@@ -179,6 +270,9 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
                 <th className="text-left px-3 py-2 text-muted-foreground font-medium">
                   Category
                 </th>
+                <th className="text-left px-3 py-2 text-muted-foreground font-medium w-16">
+                  Import
+                </th>
                 <th className="text-right px-6 py-2 text-muted-foreground font-medium w-32">
                   Amount
                 </th>
@@ -188,7 +282,7 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
               {transactions.map((tx) => (
                 <tr
                   key={tx.id}
-                  onContextMenu={(e) => handleContextMenu(e, tx.payee)}
+                  onContextMenu={(e) => handleContextMenu(e, tx.id, tx.payee)}
                   className={cn(
                     "border-b border-border/50 hover:bg-accent/30 transition-colors cursor-default",
                     tx.category_type === undefined && "bg-destructive/10"
@@ -223,8 +317,35 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
                   >
                     {tx.payee}
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {tx.account_name}
+                  <td
+                    className="px-3 py-2 text-muted-foreground"
+                    onClick={() => {
+                      setEditingAccountId(tx.id);
+                      setTimeout(() => accountSelectRef.current?.focus(), 0);
+                    }}
+                  >
+                    {editingAccountId === tx.id ? (
+                      <select
+                        ref={accountSelectRef}
+                        defaultValue={tx.account_id}
+                        className="bg-background border border-ring rounded px-1 py-0.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                        onChange={(e) =>
+                          handleAccountChange(tx.id, Number(e.target.value))
+                        }
+                        onBlur={() => setEditingAccountId(null)}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="cursor-pointer hover:text-foreground transition-colors">
+                        {tx.account_name}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <span
@@ -239,6 +360,9 @@ export default function Transactions({ onCreateRule }: Props): JSX.Element {
                     >
                       {tx.category_name}
                     </span>
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground tabular-nums text-xs">
+                    {tx.import_id ?? <span className="opacity-30">—</span>}
                   </td>
                   <td
                     className={cn(

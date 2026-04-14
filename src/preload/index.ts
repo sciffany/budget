@@ -66,6 +66,8 @@ const api = {
     ipcRenderer.invoke(IPC.TRANSACTIONS_UPDATE_CATEGORY, id, categoryId),
   updateTransactionDate: (id: number, date: string): Promise<void> =>
     ipcRenderer.invoke(IPC.TRANSACTIONS_UPDATE_DATE, id, date),
+  updateTransactionAccount: (id: number, accountId: number): Promise<void> =>
+    ipcRenderer.invoke(IPC.TRANSACTIONS_UPDATE_ACCOUNT, id, accountId),
   deleteTransaction: (id: number): Promise<void> =>
     ipcRenderer.invoke(IPC.TRANSACTIONS_DELETE, id),
 

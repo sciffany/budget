@@ -76,6 +76,10 @@ export function updateTransactionDate(id: number, date: string): void {
   getDb().prepare('UPDATE transactions SET date = ? WHERE id = ?').run(date, id)
 }
 
+export function updateTransactionAccount(id: number, accountId: number): void {
+  getDb().prepare('UPDATE transactions SET account_id = ? WHERE id = ?').run(accountId, id)
+}
+
 export function deleteTransaction(id: number): void {
   getDb().prepare('DELETE FROM transactions WHERE id = ?').run(id)
 }

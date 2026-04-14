@@ -62,7 +62,7 @@ transactions = [transaction for transaction in transactions if transaction['amou
 
 
 
-# Save to CSV
-df = pd.DataFrame(transactions)
+# Save to CSV (always include headers even if no transactions were found)
+df = pd.DataFrame(transactions, columns=['date', 'desc', 'amount'])
 df.to_csv(sys.argv[2], index=False)
 print(df.head())

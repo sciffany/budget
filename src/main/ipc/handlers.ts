@@ -81,6 +81,11 @@ export function registerIpcHandlers(): void {
     (_, id: number, date: string) =>
       transactions.updateTransactionDate(id, date)
   );
+  ipcMain.handle(
+    IPC.TRANSACTIONS_UPDATE_ACCOUNT,
+    (_, id: number, accountId: number) =>
+      transactions.updateTransactionAccount(id, accountId)
+  );
   ipcMain.handle(IPC.TRANSACTIONS_DELETE, (_, id: number) =>
     transactions.deleteTransaction(id)
   );
