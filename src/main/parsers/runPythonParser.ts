@@ -12,11 +12,25 @@ export interface PythonCsvRow {
   amount: string;
 }
 
-function resolveScriptPath(scriptName: string): string {
+interface ParserCommand {
+  cmd: string;
+  args: string[];
+}
+
+function resolveCommand(scriptName: string): ParserCommand {
+  // In a packaged build we ship a standalone native executable built with
+  // PyInstaller (see .github/workflows/release.yml). In development we run
+  // the raw .py file via the system python3 for fast iteration.
+  const baseName = scriptName.replace(/\.py$/, "");
+
   if (app.isPackaged) {
-    return join(process.resourcesPath, "python", scriptName);
+    const ext = process.platform === "win32" ? ".exe" : "";
+    const binPath = join(process.resourcesPath, "python-bin", baseName + ext);
+    return { cmd: binPath, args: [] };
   }
-  return join(app.getAppPath(), "src/main/parsers", scriptName);
+
+  const scriptPath = join(app.getAppPath(), "src/main/parsers", scriptName);
+  return { cmd: "python3", args: [scriptPath] };
 }
 
 export function runPythonParser(
@@ -24,10 +38,10 @@ export function runPythonParser(
   pdfPath: string
 ): Promise<PythonCsvRow[]> {
   return new Promise((resolve, reject) => {
-    const scriptPath = resolveScriptPath(scriptName);
+    const { cmd, args } = resolveCommand(scriptName);
     const csvPath = join(tmpdir(), `budget-${randomUUID()}.csv`);
 
-    const proc = spawn("python3", [scriptPath, pdfPath, csvPath]);
+    const proc = spawn(cmd, [...args, pdfPath, csvPath]);
 
     let stderr = "";
     proc.stderr.on("data", (d) => (stderr += d.toString()));
@@ -60,11 +74,10 @@ export function runPythonParser(
     });
 
     proc.on("error", (err) => {
-      reject(
-        new Error(
-          `Failed to spawn python3 — is Python 3 installed? (${err.message})`
-        )
-      );
+      const hint = app.isPackaged
+        ? `Failed to launch bundled parser "${scriptName}": ${err.message}`
+        : `Failed to spawn python3 — is Python 3 installed? (${err.message})`;
+      reject(new Error(hint));
     });
   });
 }

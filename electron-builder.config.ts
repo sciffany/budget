@@ -7,6 +7,12 @@ const config: Configuration = {
     buildResources: 'resources'
   },
   files: ['out/**'],
+  extraResources: [
+    {
+      from: 'build/python-bin',
+      to: 'python-bin'
+    }
+  ],
   mac: {
     entitlementsInherit: 'build/entitlements.mac.plist',
     extendInfo: {

@@ -5,6 +5,11 @@ node_modules/
 out/
 dist/
 
+# PyInstaller output (built in CI, bundled via extraResources)
+build/python-bin/
+build/pyinstaller-work/
+build/pyinstaller-spec/
+
 # electron-builder output
 dist_electron/
 
