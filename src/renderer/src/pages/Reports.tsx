@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
-import type { ReportRow } from '@shared/types'
+import type { ReportRow, TransactionFilter } from '@shared/types'
 import { formatAmount, cn } from '../lib/utils'
 import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns'
 
-export default function Reports(): JSX.Element {
+interface Props {
+  onDrillDown: (filter: TransactionFilter) => void
+}
+
+export default function Reports({ onDrillDown }: Props): JSX.Element {
   const [rows, setRows] = useState<ReportRow[]>([])
   const [month, setMonth] = useState(startOfMonth(new Date()))
   const [loading, setLoading] = useState(false)
@@ -105,12 +109,23 @@ export default function Reports(): JSX.Element {
                       row.categoryType === 'transfer' ? 'bg-blue-900/40 text-blue-400' :
                       'bg-accent text-muted-foreground'
                     )}>{row.categoryType}</span>
-                    <span className={cn(
-                      'tabular-nums font-mono text-sm w-28 text-right',
-                      row.net > 0 ? 'text-emerald-400' : ''
-                    )}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onDrillDown({
+                          categoryId: row.categoryId,
+                          dateFrom,
+                          dateTo,
+                        })
+                      }
+                      className={cn(
+                        'tabular-nums font-mono text-sm w-28 text-right cursor-pointer hover:underline underline-offset-2 focus:outline-none focus:underline',
+                        row.net > 0 ? 'text-emerald-400' : ''
+                      )}
+                      title="View transactions"
+                    >
                       {row.net >= 0 ? '+' : ''}{formatAmount(row.net)}
-                    </span>
+                    </button>
                   </div>
                 ))}
               </div>

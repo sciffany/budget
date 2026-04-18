@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { TransactionFilter } from "@shared/types";
 import { cn } from "./lib/utils";
 import Transactions from "./pages/Transactions";
 import Import from "./pages/Import";
@@ -29,10 +30,20 @@ export default function App(): JSX.Element {
   const [pendingRuleKeyword, setPendingRuleKeyword] = useState<
     string | undefined
   >(undefined);
+  const [pendingTxFilter, setPendingTxFilter] = useState<
+    TransactionFilter | undefined
+  >(undefined);
+  const [txInstance, setTxInstance] = useState(0);
 
   function handleCreateRule(payee: string): void {
     setPendingRuleKeyword(payee);
     setPage("rules");
+  }
+
+  function handleDrillDown(filter: TransactionFilter): void {
+    setPendingTxFilter(filter);
+    setTxInstance((n) => n + 1);
+    setPage("transactions");
   }
 
   return (
@@ -50,6 +61,7 @@ export default function App(): JSX.Element {
             onClick={() => {
               setPage(item.id);
               setPendingRuleKeyword(undefined);
+              setPendingTxFilter(undefined);
             }}
             className={cn(
               "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors text-left",
@@ -67,7 +79,11 @@ export default function App(): JSX.Element {
       {/* Main content */}
       <main className="flex-1 overflow-hidden">
         {page === "transactions" && (
-          <Transactions onCreateRule={handleCreateRule} />
+          <Transactions
+            onCreateRule={handleCreateRule}
+            initialFilter={pendingTxFilter}
+            key={`tx-${txInstance}`}
+          />
         )}
         {page === "import" && <Import />}
         {page === "accounts" && <Accounts />}
@@ -79,7 +95,7 @@ export default function App(): JSX.Element {
             key={pendingRuleKeyword ?? "rules"}
           />
         )}
-        {page === "reports" && <Reports />}
+        {page === "reports" && <Reports onDrillDown={handleDrillDown} />}
       </main>
     </div>
   );

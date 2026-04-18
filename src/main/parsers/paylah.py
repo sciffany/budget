@@ -2,6 +2,7 @@
 import pdfplumber
 import pandas as pd
 import re
+import os
 import sys
 import re
 from datetime import datetime
@@ -25,9 +26,22 @@ def remove_ref_num(transaction):
 def yearNow():
     return datetime.now().strftime("%Y")
 
+def year_from_filename(path):
+    # PayLah eStatement filenames typically embed a 4-digit year (e.g.
+    # "PayLah_eStatement_202401.pdf", "Statement-Jan-2024.pdf"). Fall back to
+    # the current year if none is found.
+    filename = os.path.basename(path)
+    match = re.search(r"(19|20)\d{2}", filename)
+    if match:
+        return match.group(0)
+    return yearNow()
+
+pdf_path = sys.argv[1]
+statement_year = year_from_filename(pdf_path)
+
 transactions = []
 
-with pdfplumber.open(sys.argv[1]) as pdf:
+with pdfplumber.open(pdf_path) as pdf:
     for page in pdf.pages:
         words = page.extract_words(x_tolerance=3, y_tolerance=3)
         current_row = {}
@@ -37,7 +51,7 @@ with pdfplumber.open(sys.argv[1]) as pdf:
             if is_date(text):
                 if current_row:
                     transactions.append(current_row)
-                current_row = {'date': text + ' ' + yearNow(), 'desc': '', 'amount': ''}
+                current_row = {'date': text + ' ' + statement_year, 'desc': '', 'amount': ''}
             elif current_row:
                 if x > 450:  # rightmost: amount
                     amounts = extract_amounts_with_type(text)
