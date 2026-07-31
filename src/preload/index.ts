@@ -12,6 +12,7 @@ import type {
   BulkImportResult,
   BulkImportScan,
   Category,
+  CategoryImportResult,
   Heading,
   Import,
   ImportPreviewItem,
@@ -60,6 +61,10 @@ const api = {
     ipcRenderer.invoke(IPC.CATEGORIES_DELETE, id),
   reorderCategories: (headingId: number, orderedIds: number[]): Promise<void> =>
     ipcRenderer.invoke(IPC.CATEGORIES_REORDER, headingId, orderedIds),
+  exportCategories: (): Promise<{ path: string; count: number } | null> =>
+    ipcRenderer.invoke(IPC.CATEGORIES_EXPORT),
+  importCategories: (): Promise<CategoryImportResult | null> =>
+    ipcRenderer.invoke(IPC.CATEGORIES_IMPORT),
 
   // Transactions
   listTransactions: (filter: TransactionFilter): Promise<Transaction[]> =>

@@ -29,6 +29,8 @@ import type {
   BulkImportResult,
   BulkImportResultItem,
   BulkImportScan,
+  CategoryExportRow,
+  CategoryImportResult,
   NewAccount,
   NewCategory,
   NewHeading,
@@ -184,6 +186,87 @@ export function registerIpcHandlers(): void {
     IPC.CATEGORIES_REORDER,
     (_, headingId: number, orderedIds: number[]) =>
       categories.reorderCategories(headingId, orderedIds)
+  );
+
+  ipcMain.handle(
+    IPC.CATEGORIES_EXPORT,
+    async (): Promise<{ path: string; count: number } | null> => {
+      const win = BrowserWindow.getFocusedWindow() ?? undefined;
+      const defaultPath = `budget-categories-${format(
+        new Date(),
+        "yyyy-MM-dd"
+      )}.csv`;
+      const result = win
+        ? await dialog.showSaveDialog(win, {
+            title: "Export categories",
+            defaultPath,
+            filters: [{ name: "CSV", extensions: ["csv"] }],
+          })
+        : await dialog.showSaveDialog({
+            title: "Export categories",
+            defaultPath,
+            filters: [{ name: "CSV", extensions: ["csv"] }],
+          });
+      if (result.canceled || !result.filePath) return null;
+
+      const exportRows = categories.listCategoriesForExport();
+      const csv = unparseCsv(exportRows, {
+        columns: ["heading", "category", "type"],
+      });
+      writeFileSync(result.filePath, csv, "utf8");
+      log.info(
+        `Exported ${exportRows.length} categories to ${result.filePath}`
+      );
+      return { path: result.filePath, count: exportRows.length };
+    }
+  );
+
+  ipcMain.handle(
+    IPC.CATEGORIES_IMPORT,
+    async (): Promise<CategoryImportResult | null> => {
+      const win = BrowserWindow.getFocusedWindow() ?? undefined;
+      const openResult = win
+        ? await dialog.showOpenDialog(win, {
+            title: "Import categories",
+            filters: [{ name: "CSV", extensions: ["csv"] }],
+            properties: ["openFile"],
+          })
+        : await dialog.showOpenDialog({
+            title: "Import categories",
+            filters: [{ name: "CSV", extensions: ["csv"] }],
+            properties: ["openFile"],
+          });
+      if (openResult.canceled || openResult.filePaths.length === 0) {
+        return null;
+      }
+
+      const csvText = readFileSync(openResult.filePaths[0], "utf8");
+      const parsed = parseCsv<Record<string, string>>(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.trim().toLowerCase(),
+      });
+
+      if (parsed.errors && parsed.errors.length > 0) {
+        const first = parsed.errors[0];
+        log.warn(`CSV parse errors: ${JSON.stringify(parsed.errors)}`);
+        throw new Error(`Could not parse CSV: ${first.message}`);
+      }
+
+      // Pass raw type through — the DB layer validates it and surfaces bad
+      // rows as errors rather than silently coercing them.
+      const rows: CategoryExportRow[] = parsed.data.map((raw) => ({
+        heading: (raw.heading ?? "").trim(),
+        category: (raw.category ?? "").trim(),
+        type: (raw.type ?? "").trim().toLowerCase() as CategoryExportRow["type"],
+      }));
+
+      const result = categories.importCategoriesFromRows(rows);
+      log.info(
+        `Imported categories: ${result.categoriesCreated} categories, ${result.headingsCreated} headings, ${result.duplicates} duplicates, ${result.errors.length} errors`
+      );
+      return result;
+    }
   );
 
   // ─── Transactions ──────────────────────────────────────────────────────────

@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import type { Category, Heading, NewCategory, NewHeading } from "@shared/types";
+import type {
+  Category,
+  CategoryImportResult,
+  Heading,
+  NewCategory,
+} from "@shared/types";
 import { cn } from "../lib/utils";
 
 export default function Categories(): JSX.Element {
@@ -17,6 +22,11 @@ export default function Categories(): JSX.Element {
     name: "",
     type: "expense",
   });
+  const [csvBusy, setCsvBusy] = useState<"export" | "import" | null>(null);
+  const [csvBanner, setCsvBanner] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<CategoryImportResult | null>(
+    null
+  );
 
   async function load(): Promise<void> {
     const [h, c] = await Promise.all([
@@ -67,20 +77,81 @@ export default function Categories(): JSX.Element {
     load();
   }
 
+  async function exportCsv(): Promise<void> {
+    setCsvBusy("export");
+    setCsvBanner(null);
+    try {
+      const result = await window.api.exportCategories();
+      if (result) {
+        setCsvBanner(`Exported ${result.count} categories to ${result.path}`);
+      }
+    } catch (err) {
+      setCsvBanner(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCsvBusy(null);
+    }
+  }
+
+  async function importCsv(): Promise<void> {
+    setCsvBusy("import");
+    setCsvBanner(null);
+    try {
+      const result = await window.api.importCategories();
+      if (result) {
+        setImportResult(result);
+        await load();
+      }
+    } catch (err) {
+      setCsvBanner(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCsvBusy(null);
+    }
+  }
+
+  const hasCategories = categories.some((c) => c.protected === 0);
+
   return (
     <div className="flex flex-col h-full overflow-auto">
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <h1 className="text-lg font-semibold">Categories</h1>
-        <button
-          onClick={() => {
-            setEditingHeading("new");
-            setNewHeadingName("");
-          }}
-          className="text-sm px-3 py-1.5 rounded-md bg-accent hover:bg-accent/80 transition-colors"
-        >
-          + Add Heading
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={exportCsv}
+            disabled={csvBusy !== null || !hasCategories}
+            className="text-sm px-3 py-1.5 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            {csvBusy === "export" ? "Exporting…" : "Export CSV"}
+          </button>
+          <button
+            onClick={importCsv}
+            disabled={csvBusy !== null}
+            className="text-sm px-3 py-1.5 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            {csvBusy === "import" ? "Importing…" : "Import CSV"}
+          </button>
+          <button
+            onClick={() => {
+              setEditingHeading("new");
+              setNewHeadingName("");
+            }}
+            className="text-sm px-3 py-1.5 rounded-md bg-accent hover:bg-accent/80 transition-colors"
+          >
+            + Add Heading
+          </button>
+        </div>
       </div>
+
+      {csvBanner && (
+        <div className="flex items-center justify-between gap-3 mx-6 mt-4 px-3 py-2 rounded-md bg-accent/30 border border-border text-xs">
+          <span className="truncate">{csvBanner}</span>
+          <button
+            onClick={() => setCsvBanner(null)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="p-6 space-y-6">
         {headings.map((h) => {
@@ -328,6 +399,112 @@ export default function Categories(): JSX.Element {
           </div>
         )}
       </div>
+
+      {importResult !== null && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-card border border-border rounded-xl w-[560px] max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h2 className="font-semibold">Import complete</h2>
+              <span className="text-xs text-muted-foreground">
+                {importResult.totalRows} rows in file
+              </span>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="rounded-md bg-emerald-500/10 border border-emerald-500/30 py-2">
+                  <div className="text-lg font-semibold text-emerald-400">
+                    {importResult.categoriesCreated}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Categories
+                  </div>
+                </div>
+                <div className="rounded-md bg-emerald-500/10 border border-emerald-500/30 py-2">
+                  <div className="text-lg font-semibold text-emerald-400">
+                    {importResult.headingsCreated}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Headings
+                  </div>
+                </div>
+                <div className="rounded-md bg-accent/30 border border-border py-2">
+                  <div className="text-lg font-semibold">
+                    {importResult.duplicates}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Duplicates
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    "rounded-md border py-2",
+                    importResult.errors.length > 0
+                      ? "bg-red-500/10 border-red-500/30"
+                      : "bg-accent/30 border-border"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "text-lg font-semibold",
+                      importResult.errors.length > 0 && "text-red-400"
+                    )}
+                  >
+                    {importResult.errors.length}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Skipped
+                  </div>
+                </div>
+              </div>
+
+              {importResult.errors.length > 0 && (
+                <div className="max-h-64 overflow-auto rounded-md border border-border">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-accent/40">
+                      <tr>
+                        <th className="text-left px-3 py-1.5 font-medium text-muted-foreground w-12">
+                          Row
+                        </th>
+                        <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">
+                          Heading
+                        </th>
+                        <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">
+                          Category
+                        </th>
+                        <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">
+                          Reason
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importResult.errors.map((e, i) => (
+                        <tr key={i} className="border-t border-border/50">
+                          <td className="px-3 py-1.5 text-muted-foreground tabular-nums">
+                            {e.row}
+                          </td>
+                          <td className="px-3 py-1.5">{e.heading || "—"}</td>
+                          <td className="px-3 py-1.5">{e.category || "—"}</td>
+                          <td className="px-3 py-1.5 text-red-400">
+                            {e.reason}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end px-6 py-4 border-t border-border">
+              <button
+                onClick={() => setImportResult(null)}
+                className="px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

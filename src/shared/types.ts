@@ -29,6 +29,28 @@ export interface Category {
 
 export type NewCategory = Pick<Category, 'heading_id' | 'name' | 'type'>
 
+// Categories CSV export/import — one row per category, grouped by heading.
+export interface CategoryExportRow {
+  heading: string
+  category: string
+  type: 'expense' | 'income' | 'transfer'
+}
+
+export interface CategoryImportError {
+  row: number
+  heading: string
+  category: string
+  reason: string
+}
+
+export interface CategoryImportResult {
+  headingsCreated: number
+  categoriesCreated: number
+  duplicates: number
+  errors: CategoryImportError[]
+  totalRows: number
+}
+
 export interface Transaction {
   id: number
   account_id: number

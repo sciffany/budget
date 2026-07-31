@@ -18,6 +18,8 @@ export const IPC = {
   CATEGORIES_UPDATE: 'categories:update',
   CATEGORIES_DELETE: 'categories:delete',
   CATEGORIES_REORDER: 'categories:reorder',
+  CATEGORIES_EXPORT: 'categories:export',
+  CATEGORIES_IMPORT: 'categories:import',
 
   // Transactions
   TRANSACTIONS_LIST: 'transactions:list',
