@@ -23,6 +23,7 @@ import type {
   ReportRow,
   Rule,
   RuleDiffRow,
+  RuleImportResult,
   Transaction,
   TransactionFilter,
 } from "../shared/types";
@@ -87,6 +88,10 @@ const api = {
   previewRules: (): Promise<RuleDiffRow[]> =>
     ipcRenderer.invoke(IPC.RULES_PREVIEW),
   applyRules: (): Promise<void> => ipcRenderer.invoke(IPC.RULES_APPLY),
+  exportRules: (): Promise<{ path: string; count: number } | null> =>
+    ipcRenderer.invoke(IPC.RULES_EXPORT),
+  importRules: (): Promise<RuleImportResult | null> =>
+    ipcRenderer.invoke(IPC.RULES_IMPORT),
 
   // Import
   detectParser: (

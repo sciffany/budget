@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { Category, NewRule, Rule, RuleDiffRow } from '@shared/types'
+import type {
+  Category,
+  NewRule,
+  Rule,
+  RuleDiffRow,
+  RuleImportResult
+} from '@shared/types'
 import { formatAmount, cn } from '../lib/utils'
 
 interface Props {
@@ -15,6 +21,9 @@ export default function Rules({ prefilledKeyword }: Props): JSX.Element {
   const [diff, setDiff] = useState<RuleDiffRow[] | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [applying, setApplying] = useState(false)
+  const [csvBusy, setCsvBusy] = useState<'export' | 'import' | null>(null)
+  const [csvBanner, setCsvBanner] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<RuleImportResult | null>(null)
 
   async function load(openWithKeyword?: string): Promise<void> {
     const [r, c] = await Promise.all([window.api.listRules(), window.api.listCategories()])
@@ -62,6 +71,37 @@ export default function Rules({ prefilledKeyword }: Props): JSX.Element {
     setDiff(null)
   }
 
+  async function exportCsv(): Promise<void> {
+    setCsvBusy('export')
+    setCsvBanner(null)
+    try {
+      const result = await window.api.exportRules()
+      if (result) {
+        setCsvBanner(`Exported ${result.count} rules to ${result.path}`)
+      }
+    } catch (err) {
+      setCsvBanner(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCsvBusy(null)
+    }
+  }
+
+  async function importCsv(): Promise<void> {
+    setCsvBusy('import')
+    setCsvBanner(null)
+    try {
+      const result = await window.api.importRules()
+      if (result) {
+        setImportResult(result)
+        await load()
+      }
+    } catch (err) {
+      setCsvBanner(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCsvBusy(null)
+    }
+  }
+
   const categoryName = (id: number): string =>
     categories.find((c) => c.id === id)?.name ?? '?'
 
@@ -70,6 +110,20 @@ export default function Rules({ prefilledKeyword }: Props): JSX.Element {
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <h1 className="text-lg font-semibold">Rules</h1>
         <div className="flex gap-2">
+          <button
+            onClick={exportCsv}
+            disabled={csvBusy !== null || rules.length === 0}
+            className="text-sm px-3 py-1.5 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            {csvBusy === 'export' ? 'Exporting…' : 'Export CSV'}
+          </button>
+          <button
+            onClick={importCsv}
+            disabled={csvBusy !== null}
+            className="text-sm px-3 py-1.5 rounded-md border border-border hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            {csvBusy === 'import' ? 'Importing…' : 'Import CSV'}
+          </button>
           <button
             onClick={openPreview}
             className="text-sm px-3 py-1.5 rounded-md bg-accent hover:bg-accent/80 transition-colors"
@@ -87,6 +141,18 @@ export default function Rules({ prefilledKeyword }: Props): JSX.Element {
           </button>
         </div>
       </div>
+
+      {csvBanner && (
+        <div className="flex items-center justify-between gap-3 mx-6 mt-4 px-3 py-2 rounded-md bg-accent/30 border border-border text-xs">
+          <span className="truncate">{csvBanner}</span>
+          <button
+            onClick={() => setCsvBanner(null)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto p-6 space-y-2">
         {editingId === 'new' && (
@@ -190,6 +256,99 @@ export default function Rules({ prefilledKeyword }: Props): JSX.Element {
                 className="px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:bg-primary/90"
               >
                 {applying ? 'Applying…' : `Apply ${diff.length} changes`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import result modal */}
+      {importResult !== null && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-card border border-border rounded-xl w-[560px] max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h2 className="font-semibold">Import complete</h2>
+              <span className="text-xs text-muted-foreground">
+                {importResult.totalRows} rows in file
+              </span>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="rounded-md bg-emerald-500/10 border border-emerald-500/30 py-2">
+                  <div className="text-lg font-semibold text-emerald-400">
+                    {importResult.imported}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Imported
+                  </div>
+                </div>
+                <div className="rounded-md bg-accent/30 border border-border py-2">
+                  <div className="text-lg font-semibold">
+                    {importResult.duplicates}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Duplicates
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    'rounded-md border py-2',
+                    importResult.errors.length > 0
+                      ? 'bg-red-500/10 border-red-500/30'
+                      : 'bg-accent/30 border-border'
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'text-lg font-semibold',
+                      importResult.errors.length > 0 && 'text-red-400'
+                    )}
+                  >
+                    {importResult.errors.length}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Skipped
+                  </div>
+                </div>
+              </div>
+
+              {importResult.errors.length > 0 && (
+                <div className="max-h-64 overflow-auto rounded-md border border-border">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-accent/40">
+                      <tr>
+                        <th className="text-left px-3 py-1.5 font-medium text-muted-foreground w-12">
+                          Row
+                        </th>
+                        <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">
+                          Keyword
+                        </th>
+                        <th className="text-left px-3 py-1.5 font-medium text-muted-foreground">
+                          Reason
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importResult.errors.map((e, i) => (
+                        <tr key={i} className="border-t border-border/50">
+                          <td className="px-3 py-1.5 text-muted-foreground tabular-nums">
+                            {e.row}
+                          </td>
+                          <td className="px-3 py-1.5 font-mono">{e.keyword || '—'}</td>
+                          <td className="px-3 py-1.5 text-red-400">{e.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end px-6 py-4 border-t border-border">
+              <button
+                onClick={() => setImportResult(null)}
+                className="px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+              >
+                Done
               </button>
             </div>
           </div>

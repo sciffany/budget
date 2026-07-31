@@ -1,8 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { copyFileSync, readdirSync, statSync, unlinkSync } from "fs";
+import {
+  copyFileSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "fs";
 import { extname, join } from "path";
 import log from "electron-log/main";
 import Database from "better-sqlite3";
+import { parse as parseCsv, unparse as unparseCsv } from "papaparse";
 import { IPC } from "./channels";
 import * as accounts from "../db/queries/accounts";
 import * as categories from "../db/queries/categories";
@@ -26,6 +34,8 @@ import type {
   NewHeading,
   NewRule,
   NewTransaction,
+  RuleExportRow,
+  RuleImportResult,
   TransactionFilter,
   ImportPreviewItem,
 } from "@shared/types";
@@ -216,6 +226,109 @@ export function registerIpcHandlers(): void {
   );
   ipcMain.handle(IPC.RULES_PREVIEW, () => rulesPreview());
   ipcMain.handle(IPC.RULES_APPLY, () => rulesApply());
+
+  ipcMain.handle(
+    IPC.RULES_EXPORT,
+    async (): Promise<{ path: string; count: number } | null> => {
+      const win = BrowserWindow.getFocusedWindow() ?? undefined;
+      const defaultPath = `budget-rules-${format(
+        new Date(),
+        "yyyy-MM-dd"
+      )}.csv`;
+      const result = win
+        ? await dialog.showSaveDialog(win, {
+            title: "Export rules",
+            defaultPath,
+            filters: [{ name: "CSV", extensions: ["csv"] }],
+          })
+        : await dialog.showSaveDialog({
+            title: "Export rules",
+            defaultPath,
+            filters: [{ name: "CSV", extensions: ["csv"] }],
+          });
+      if (result.canceled || !result.filePath) return null;
+
+      const exportRows = rules.listRulesForExport();
+      const csv = unparseCsv(
+        exportRows.map((r) => ({
+          keyword: r.keyword,
+          heading: r.heading,
+          category: r.category,
+          amount_min: r.amount_min ?? "",
+          amount_max: r.amount_max ?? "",
+        })),
+        {
+          columns: [
+            "keyword",
+            "heading",
+            "category",
+            "amount_min",
+            "amount_max",
+          ],
+        }
+      );
+      writeFileSync(result.filePath, csv, "utf8");
+      log.info(
+        `Exported ${exportRows.length} rules to ${result.filePath}`
+      );
+      return { path: result.filePath, count: exportRows.length };
+    }
+  );
+
+  ipcMain.handle(
+    IPC.RULES_IMPORT,
+    async (): Promise<RuleImportResult | null> => {
+      const win = BrowserWindow.getFocusedWindow() ?? undefined;
+      const openResult = win
+        ? await dialog.showOpenDialog(win, {
+            title: "Import rules",
+            filters: [{ name: "CSV", extensions: ["csv"] }],
+            properties: ["openFile"],
+          })
+        : await dialog.showOpenDialog({
+            title: "Import rules",
+            filters: [{ name: "CSV", extensions: ["csv"] }],
+            properties: ["openFile"],
+          });
+      if (openResult.canceled || openResult.filePaths.length === 0) {
+        return null;
+      }
+
+      const csvText = readFileSync(openResult.filePaths[0], "utf8");
+      const parsed = parseCsv<Record<string, string>>(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.trim().toLowerCase(),
+      });
+
+      if (parsed.errors && parsed.errors.length > 0) {
+        const first = parsed.errors[0];
+        log.warn(`CSV parse errors: ${JSON.stringify(parsed.errors)}`);
+        throw new Error(`Could not parse CSV: ${first.message}`);
+      }
+
+      const rows: RuleExportRow[] = parsed.data.map((raw) => {
+        const parseNum = (v: string | undefined): number | null => {
+          if (v === undefined || v === null || v.trim() === "") return null;
+          const n = Number(v);
+          return Number.isFinite(n) ? n : null;
+        };
+        return {
+          keyword: (raw.keyword ?? "").trim(),
+          heading: (raw.heading ?? "").trim(),
+          category: (raw.category ?? "").trim(),
+          amount_min: parseNum(raw.amount_min),
+          amount_max: parseNum(raw.amount_max),
+        };
+      });
+
+      const result = rules.importRulesFromRows(rows);
+      log.info(
+        `Imported rules: ${result.imported} added, ${result.duplicates} duplicates, ${result.errors.length} errors`
+      );
+      return result;
+    }
+  );
 
   // ─── Import ────────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.IMPORT_DETECT, async (_, filepath: string) => {

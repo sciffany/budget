@@ -59,6 +59,28 @@ export interface Rule {
 
 export type NewRule = Omit<Rule, 'id'>
 
+// Rules CSV export/import
+export interface RuleExportRow {
+  keyword: string
+  heading: string
+  category: string
+  amount_min: number | null
+  amount_max: number | null
+}
+
+export interface RuleImportError {
+  row: number
+  keyword: string
+  reason: string
+}
+
+export interface RuleImportResult {
+  imported: number
+  duplicates: number
+  errors: RuleImportError[]
+  totalRows: number
+}
+
 export interface Import {
   id: number
   filename: string

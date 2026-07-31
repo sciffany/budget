@@ -35,6 +35,8 @@ export const IPC = {
   RULES_REORDER: 'rules:reorder',
   RULES_PREVIEW: 'rules:preview',
   RULES_APPLY: 'rules:apply',
+  RULES_EXPORT: 'rules:export',
+  RULES_IMPORT: 'rules:import',
 
   // Import
   IMPORT_DETECT: 'import:detect',
