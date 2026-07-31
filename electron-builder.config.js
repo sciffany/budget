@@ -1,6 +1,5 @@
-import type { Configuration } from 'electron-builder'
-
-const config: Configuration = {
+/** @type {import('electron-builder').Configuration} */
+const config = {
   appId: 'com.budget.app',
   productName: 'Budget',
   directories: {
@@ -14,6 +13,8 @@ const config: Configuration = {
     }
   ],
   mac: {
+    identity: null,
+    entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
     extendInfo: {
       NSCameraUsageDescription: "Application requests access to the device's camera.",
@@ -39,4 +40,4 @@ const config: Configuration = {
   }
 }
 
-export default config
+module.exports = config

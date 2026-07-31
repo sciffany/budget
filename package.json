@@ -10,6 +10,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "package": "npm run build && electron-builder",
+    "build:python:mac": "bash scripts/build-python-mac.sh",
+    "dist:mac": "npm run build:python:mac && npm run build && electron-builder -c electron-builder.config.js --mac dmg --arm64",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
