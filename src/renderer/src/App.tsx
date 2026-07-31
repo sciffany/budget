@@ -7,6 +7,7 @@ import Accounts from "./pages/Accounts";
 import Categories from "./pages/Categories";
 import Rules from "./pages/Rules";
 import Reports from "./pages/Reports";
+import Settings from "./pages/Settings";
 
 type Page =
   | "transactions"
@@ -14,7 +15,8 @@ type Page =
   | "accounts"
   | "categories"
   | "rules"
-  | "reports";
+  | "reports"
+  | "settings";
 
 const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: "transactions", label: "Transactions", icon: "$" },
@@ -23,6 +25,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: "categories", label: "Categories", icon: "⊞" },
   { id: "rules", label: "Rules", icon: "⚙" },
   { id: "reports", label: "Reports", icon: "◫" },
+  { id: "settings", label: "Settings", icon: "☰" },
 ];
 
 export default function App(): JSX.Element {
@@ -96,6 +99,7 @@ export default function App(): JSX.Element {
           />
         )}
         {page === "reports" && <Reports onDrillDown={handleDrillDown} />}
+        {page === "settings" && <Settings />}
       </main>
     </div>
   );

@@ -1,4 +1,8 @@
-import { ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { copyFileSync, readdirSync, statSync, unlinkSync } from "fs";
+import { extname, join } from "path";
+import log from "electron-log/main";
+import Database from "better-sqlite3";
 import { IPC } from "./channels";
 import * as accounts from "../db/queries/accounts";
 import * as categories from "../db/queries/categories";
@@ -7,9 +11,16 @@ import * as rules from "../db/queries/rules";
 import * as imports from "../db/queries/imports";
 import { rulesPreview, rulesApply } from "../rules/engine";
 import { parserRegistry } from "../parsers/registry";
-import { getDb } from "../db/schema";
+import { closeDb, getDb, getDbPath } from "../db/schema";
 import { format } from "date-fns";
 import type {
+  Account,
+  BulkImportFile,
+  BulkImportFolder,
+  BulkImportRequestItem,
+  BulkImportResult,
+  BulkImportResultItem,
+  BulkImportScan,
   NewAccount,
   NewCategory,
   NewHeading,
@@ -18,6 +29,107 @@ import type {
   TransactionFilter,
   ImportPreviewItem,
 } from "@shared/types";
+
+const SUPPORTED_EXTS = new Set(["pdf", "csv"]);
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[\s_\-]+/g, "").trim();
+}
+
+function matchAccount(
+  folderName: string,
+  allAccounts: Account[]
+): { accountId: number | null; reason: BulkImportFolder["matchReason"] } {
+  const target = slugify(folderName);
+  if (!target) return { accountId: null, reason: null };
+
+  const byName = allAccounts.find((a) => slugify(a.name) === target);
+  if (byName) return { accountId: byName.id, reason: "name" };
+
+  const byInstitution = allAccounts.find(
+    (a) => slugify(a.institution) === target
+  );
+  if (byInstitution) return { accountId: byInstitution.id, reason: "institution" };
+
+  const partial = allAccounts.find((a) => {
+    const n = slugify(a.name);
+    const i = slugify(a.institution);
+    return (
+      n.includes(target) ||
+      target.includes(n) ||
+      i.includes(target) ||
+      target.includes(i)
+    );
+  });
+  if (partial) return { accountId: partial.id, reason: "contains" };
+
+  return { accountId: null, reason: null };
+}
+
+async function scanFile(filepath: string): Promise<BulkImportFile> {
+  const filename = filepath.split(/[\\/]/).pop() ?? filepath;
+  try {
+    const parser = await parserRegistry.detect(filepath);
+    return {
+      filepath,
+      filename,
+      parserId: parser.id,
+      parserName: parser.displayName,
+    };
+  } catch (err) {
+    return {
+      filepath,
+      filename,
+      parserId: null,
+      parserName: null,
+      detectError: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+function listSupportedFiles(dir: string): string[] {
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((name) => {
+      if (name.startsWith(".")) return false;
+      const full = join(dir, name);
+      try {
+        if (!statSync(full).isFile()) return false;
+      } catch {
+        return false;
+      }
+      const ext = extname(name).toLowerCase().slice(1);
+      return SUPPORTED_EXTS.has(ext);
+    })
+    .map((name) => join(dir, name))
+    .sort();
+}
+
+function listSubdirectories(dir: string): string[] {
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((name) => {
+      if (name.startsWith(".")) return false;
+      const full = join(dir, name);
+      try {
+        return statSync(full).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .map((name) => join(dir, name))
+    .sort();
+}
 
 export function registerIpcHandlers(): void {
   // ─── Accounts ──────────────────────────────────────────────────────────────
@@ -197,6 +309,131 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.IMPORTS_LIST, () => imports.listImports());
 
+  // ─── Bulk folder import ────────────────────────────────────────────────────
+  ipcMain.handle(IPC.IMPORT_BULK_PICK_FOLDER, async () => {
+    const win = BrowserWindow.getFocusedWindow() ?? undefined;
+    const result = win
+      ? await dialog.showOpenDialog(win, {
+          title: "Select a folder to bulk import",
+          properties: ["openDirectory"],
+        })
+      : await dialog.showOpenDialog({
+          title: "Select a folder to bulk import",
+          properties: ["openDirectory"],
+        });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle(
+    IPC.IMPORT_BULK_SCAN,
+    async (_, rootPath: string): Promise<BulkImportScan> => {
+      const allAccounts = accounts.listAccounts();
+      const subdirs = listSubdirectories(rootPath);
+      const folders: BulkImportFolder[] = [];
+
+      for (const dir of subdirs) {
+        const folderName = dir.split(/[\\/]/).pop() ?? dir;
+        const filesInDir = listSupportedFiles(dir);
+        if (filesInDir.length === 0) continue;
+
+        const files = await Promise.all(filesInDir.map(scanFile));
+        const { accountId, reason } = matchAccount(folderName, allAccounts);
+
+        folders.push({
+          folderName,
+          folderPath: dir,
+          suggestedAccountId: accountId,
+          matchReason: reason,
+          files,
+          selected: true,
+        });
+      }
+
+      const looseFilePaths = listSupportedFiles(rootPath);
+      const looseFiles = await Promise.all(looseFilePaths.map(scanFile));
+
+      return { rootPath, folders, looseFiles };
+    }
+  );
+
+  ipcMain.handle(
+    IPC.IMPORT_BULK_COMMIT,
+    async (
+      _,
+      items: BulkImportRequestItem[]
+    ): Promise<BulkImportResult> => {
+      const defaultCatId = categories.getDefaultCategoryId();
+      const results: BulkImportResultItem[] = [];
+      let totalInserted = 0;
+      let succeededFiles = 0;
+
+      for (const item of items) {
+        const filename = item.filepath.split(/[\\/]/).pop() ?? item.filepath;
+        try {
+          const parser = parserRegistry.get(item.parserId);
+          const parsed = await parser.parse(item.filepath);
+
+          const importRecord = imports.createImport({
+            filename,
+            bank_type: parser.id,
+            format: parser.formats[0],
+            imported_at: format(new Date(), "yyyy-MM-dd'T'HH:mm:ss"),
+            transaction_count: 0,
+          });
+
+          const rows: NewTransaction[] = parsed.transactions.map((t) => ({
+            account_id: item.accountId,
+            date: t.date,
+            payee: t.payee,
+            amount: t.amount,
+            category_id: defaultCatId,
+            import_id: importRecord.id,
+          }));
+
+          const inserted = transactions.bulkInsertTransactions(
+            rows,
+            importRecord.id
+          );
+
+          getDb()
+            .prepare("UPDATE imports SET transaction_count = ? WHERE id = ?")
+            .run(inserted, importRecord.id);
+
+          results.push({
+            filepath: item.filepath,
+            filename,
+            accountId: item.accountId,
+            inserted,
+            parsed: parsed.transactions.length,
+          });
+          totalInserted += inserted;
+          succeededFiles += 1;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.error(`Bulk import failed for ${filename}: ${message}`);
+          results.push({
+            filepath: item.filepath,
+            filename,
+            accountId: item.accountId,
+            inserted: 0,
+            parsed: 0,
+            error: message,
+          });
+        }
+      }
+
+      if (succeededFiles > 0) rulesApply();
+
+      return {
+        items: results,
+        totalInserted,
+        totalFiles: items.length,
+        succeededFiles,
+      };
+    }
+  );
+
   // ─── Reports ───────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.REPORTS_SUMMARY, (_, dateFrom: string, dateTo: string) => {
     const rows = getDb()
@@ -214,4 +451,156 @@ export function registerIpcHandlers(): void {
       .all(dateFrom, dateTo);
     return rows;
   });
+
+  // ─── Database backup / restore ─────────────────────────────────────────────
+  ipcMain.handle(IPC.DB_GET_PATH, () => getDbPath());
+
+  ipcMain.handle(IPC.DB_REVEAL, () => {
+    shell.showItemInFolder(getDbPath());
+  });
+
+  ipcMain.handle(
+    IPC.DB_EXPORT,
+    async (): Promise<{ path: string } | null> => {
+      const win = BrowserWindow.getFocusedWindow() ?? undefined;
+      const defaultPath = `budget-backup-${format(
+        new Date(),
+        "yyyy-MM-dd"
+      )}.db`;
+      const result = win
+        ? await dialog.showSaveDialog(win, {
+            title: "Export database",
+            defaultPath,
+            filters: [{ name: "SQLite database", extensions: ["db"] }],
+          })
+        : await dialog.showSaveDialog({
+            title: "Export database",
+            defaultPath,
+            filters: [{ name: "SQLite database", extensions: ["db"] }],
+          });
+      if (result.canceled || !result.filePath) return null;
+
+      // Use SQLite's online backup API — creates a consistent single-file
+      // snapshot while the app keeps running (WAL is checkpointed into the copy).
+      await getDb().backup(result.filePath);
+      log.info(`Database exported to ${result.filePath}`);
+      return { path: result.filePath };
+    }
+  );
+
+  ipcMain.handle(
+    IPC.DB_IMPORT,
+    async (): Promise<{ imported: boolean; error?: string }> => {
+      const win = BrowserWindow.getFocusedWindow() ?? undefined;
+      const openResult = win
+        ? await dialog.showOpenDialog(win, {
+            title: "Import database",
+            filters: [
+              {
+                name: "SQLite database",
+                extensions: ["db", "sqlite", "sqlite3"],
+              },
+            ],
+            properties: ["openFile"],
+          })
+        : await dialog.showOpenDialog({
+            title: "Import database",
+            filters: [
+              {
+                name: "SQLite database",
+                extensions: ["db", "sqlite", "sqlite3"],
+              },
+            ],
+            properties: ["openFile"],
+          });
+      if (openResult.canceled || openResult.filePaths.length === 0) {
+        return { imported: false };
+      }
+      const pickedPath = openResult.filePaths[0];
+
+      // Validate it's a real Budget SQLite database before doing anything
+      // destructive.
+      try {
+        const probe = new Database(pickedPath, {
+          readonly: true,
+          fileMustExist: true,
+        });
+        try {
+          const row = probe
+            .prepare("SELECT version FROM schema_version")
+            .get() as { version: number } | undefined;
+          if (!row) throw new Error("Missing schema_version row");
+          // Sanity check a couple of expected tables exist.
+          probe.prepare("SELECT 1 FROM accounts LIMIT 1").get();
+          probe.prepare("SELECT 1 FROM transactions LIMIT 1").get();
+        } finally {
+          probe.close();
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.error(`Invalid database file selected for import: ${message}`);
+        const errOpts = {
+          type: "error" as const,
+          title: "Invalid database",
+          message: "This file is not a valid Budget database.",
+          detail: message,
+        };
+        if (win) await dialog.showMessageBox(win, errOpts);
+        else await dialog.showMessageBox(errOpts);
+        return { imported: false, error: message };
+      }
+
+      // Confirm the destructive action.
+      const confirmOpts = {
+        type: "warning" as const,
+        title: "Replace database?",
+        message: "Replace your current database with the selected file?",
+        detail:
+          "All current data will be replaced. The app will restart to load the imported database.",
+        buttons: ["Cancel", "Replace and restart"],
+        defaultId: 0,
+        cancelId: 0,
+      };
+      const confirm = win
+        ? await dialog.showMessageBox(win, confirmOpts)
+        : await dialog.showMessageBox(confirmOpts);
+      if (confirm.response !== 1) return { imported: false };
+
+      // Close the current database so we can safely replace its file.
+      try {
+        closeDb();
+      } catch (err) {
+        log.warn(`closeDb() threw before import: ${String(err)}`);
+      }
+
+      const dbPath = getDbPath();
+      // Remove stale WAL/SHM sidecars from the previous database — otherwise
+      // SQLite will try to reconcile them against the new file.
+      for (const sidecar of [`${dbPath}-wal`, `${dbPath}-shm`]) {
+        try {
+          unlinkSync(sidecar);
+        } catch {
+          /* ignore — sidecar didn't exist */
+        }
+      }
+
+      try {
+        copyFileSync(pickedPath, dbPath);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.error(`Failed to copy imported database into place: ${message}`);
+        return { imported: false, error: message };
+      }
+
+      log.info(`Database imported from ${pickedPath}`);
+
+      // Give the IPC reply time to reach the renderer before we tear down.
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 150);
+
+      return { imported: true };
+    }
+  );
 }

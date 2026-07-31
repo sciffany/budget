@@ -124,3 +124,51 @@ export interface ImportPreviewItem extends ParsedTransaction {
   selected: boolean
   parseError?: string
 }
+
+// ─── Bulk folder import ──────────────────────────────────────────────────────
+
+export interface BulkImportFile {
+  filepath: string
+  filename: string
+  parserId: string | null
+  parserName: string | null
+  detectError?: string
+}
+
+export interface BulkImportFolder {
+  folderName: string
+  folderPath: string
+  suggestedAccountId: number | null
+  matchReason: 'name' | 'institution' | 'contains' | null
+  files: BulkImportFile[]
+  selected: boolean
+}
+
+export interface BulkImportScan {
+  rootPath: string
+  folders: BulkImportFolder[]
+  /** Loose files that live in the root and weren't inside any subfolder. */
+  looseFiles: BulkImportFile[]
+}
+
+export interface BulkImportRequestItem {
+  filepath: string
+  parserId: string
+  accountId: number
+}
+
+export interface BulkImportResultItem {
+  filepath: string
+  filename: string
+  accountId: number
+  inserted: number
+  parsed: number
+  error?: string
+}
+
+export interface BulkImportResult {
+  items: BulkImportResultItem[]
+  totalInserted: number
+  totalFiles: number
+  succeededFiles: number
+}

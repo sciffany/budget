@@ -8,6 +8,9 @@ const { webUtils } = require("electron") as typeof import("electron");
 import { IPC } from "../main/ipc/channels";
 import type {
   Account,
+  BulkImportRequestItem,
+  BulkImportResult,
+  BulkImportScan,
   Category,
   Heading,
   Import,
@@ -109,10 +112,26 @@ const api = {
       selectedRows
     ),
   listImports: (): Promise<Import[]> => ipcRenderer.invoke(IPC.IMPORTS_LIST),
+  pickBulkImportFolder: (): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.IMPORT_BULK_PICK_FOLDER),
+  scanBulkImportFolder: (rootPath: string): Promise<BulkImportScan> =>
+    ipcRenderer.invoke(IPC.IMPORT_BULK_SCAN, rootPath),
+  commitBulkImport: (
+    items: BulkImportRequestItem[]
+  ): Promise<BulkImportResult> =>
+    ipcRenderer.invoke(IPC.IMPORT_BULK_COMMIT, items),
 
   // Reports
   reportSummary: (dateFrom: string, dateTo: string): Promise<ReportRow[]> =>
     ipcRenderer.invoke(IPC.REPORTS_SUMMARY, dateFrom, dateTo),
+
+  // Database backup / restore
+  getDatabasePath: (): Promise<string> => ipcRenderer.invoke(IPC.DB_GET_PATH),
+  revealDatabase: (): Promise<void> => ipcRenderer.invoke(IPC.DB_REVEAL),
+  exportDatabase: (): Promise<{ path: string } | null> =>
+    ipcRenderer.invoke(IPC.DB_EXPORT),
+  importDatabase: (): Promise<{ imported: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.DB_IMPORT),
 
   // Utils
   getFilePath: (file: File): string => webUtils.getPathForFile(file),

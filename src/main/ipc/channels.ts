@@ -41,7 +41,16 @@ export const IPC = {
   IMPORT_PARSE: 'import:parse',
   IMPORT_COMMIT: 'import:commit',
   IMPORTS_LIST: 'imports:list',
+  IMPORT_BULK_PICK_FOLDER: 'import:bulkPickFolder',
+  IMPORT_BULK_SCAN: 'import:bulkScan',
+  IMPORT_BULK_COMMIT: 'import:bulkCommit',
 
   // Reports
   REPORTS_SUMMARY: 'reports:summary',
+
+  // Database backup / restore
+  DB_EXPORT: 'db:export',
+  DB_IMPORT: 'db:import',
+  DB_GET_PATH: 'db:getPath',
+  DB_REVEAL: 'db:reveal',
 } as const
