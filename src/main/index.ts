@@ -12,6 +12,7 @@ import { OCBCDebitParser } from './parsers/ocbcDebit'
 import { OCBCPdfParser } from './parsers/ocbcPdf'
 import { RevolutWalletParser } from './parsers/revolutWallet'
 import { PayLahPdfParser } from './parsers/paylahPdf'
+import { CitibankPdfParser } from './parsers/citibankPdf'
 import { GenericCsvParser } from './parsers/genericCsv'
 
 log.initialize()
@@ -57,6 +58,7 @@ app.whenReady().then(() => {
   parserRegistry.register(new DBSDebitParser())
   parserRegistry.register(new OCBCDebitParser())
   parserRegistry.register(new OCBCPdfParser())
+  parserRegistry.register(new CitibankPdfParser())
   parserRegistry.register(new RevolutWalletParser())
   parserRegistry.register(new GenericCsvParser()) // fallback — must be last
   registerIpcHandlers()
